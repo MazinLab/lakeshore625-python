@@ -45,9 +45,11 @@ Serial Settings:
     parser.add_argument("--quench-status", action="store_true", help="Get quench detection status (QNCH?)")
     parser.add_argument("--enable-quench", action="store_true", help="Enable quench detection (QNCH 1)")
     parser.add_argument("--disable-quench", action="store_true", help="Disable quench detection (QNCH 0)")
+    parser.add_argument("--set-quench", nargs=2, metavar=('ENABLE', 'STEP_LIMIT'), help="Set quench detection: enable(0/1) and step_limit (QNCH)")
+    parser.add_argument("--error-status", action="store_true", help="Get error status register (ERSTR?)")
 
     # Raw serial command
-    parser.add_argument("--raw-command", type=str, help="Send raw command to device")
+    parser.add_argument("--raw-command", nargs='+', help="Send raw command to device (supports multiple arguments)")
     
     args = parser.parse_args()
 
@@ -56,8 +58,10 @@ Serial Settings:
 
         # Raw command execution
         if args.raw_command:
-            print(f"Command: {args.raw_command}")
-            response = power_controller.send_command(args.raw_command)
+            # Join multiple arguments into a single command string
+            command = ' '.join(args.raw_command)
+            print(f"Command: {command}")
+            response = power_controller.send_command(command)
             print(f"Response: {response}")
             return
 
@@ -173,6 +177,22 @@ Serial Settings:
             print("Disabled quench detection")
             if response:
                 print(f"Response: {response}")
+
+        if args.set_quench:
+            enable, step_limit = args.set_quench
+            print(f"Command: QNCH {enable} {step_limit}")
+            response = power_controller.set_quench_detection(int(enable), float(step_limit))
+            print(f"Set quench detection: enable={enable}, step_limit={step_limit}")
+            if response:
+                print(f"Response: {response}")
+
+        if args.error_status:
+            print("Command: ERSTR?")
+            error_status = power_controller.get_error_status()
+            if error_status and error_status != "NO_RESPONSE":
+                print(error_status)
+            else:
+                print("No response from device")
 
         if args.get_max_limits:
             print("Command: LIMIT?")
