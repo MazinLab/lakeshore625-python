@@ -36,10 +36,49 @@ class RampLogger:
             "Ramp_Rate_A_per_s",
             "Current_A",
             "Voltage_V", 
-            "Field_T"
+            "Field_T",
+            "Error_Status"
         ]
-        self.column_widths = [28, 12, 12, 16, 18, 14, 14, 14]
+        self.column_widths = [28, 12, 12, 16, 18, 14, 14, 14, 20]
         
+    def _parse_error_status(self, response):
+        """Parse ERSTR? response and return human-readable error or 'None'"""
+        if not response or response == "NO_RESPONSE":
+            return "None"
+            
+        try:
+            hardware_errors, operational_errors, psh_errors = response.split(',')
+            operational_val = int(operational_errors.strip())
+            
+            # Check for specific errors we care about
+            errors = []
+            if operational_val & 64: errors.append("Magnet Crowbar")
+            if operational_val & 32: errors.append("Magnet Quench")
+            if operational_val & 16: errors.append("Remote Inhibit")
+            if operational_val & 8:  errors.append("Temp High")
+            if operational_val & 4:  errors.append("High Line Voltage")
+            if operational_val & 2:  errors.append("Ext Program Error")
+            if operational_val & 1:  errors.append("Calibration Error")
+            
+            # Also check hardware errors
+            hardware_val = int(hardware_errors.strip())
+            if hardware_val & 32: errors.append("DAC Error")
+            if hardware_val & 16: errors.append("Output Control Fail")
+            if hardware_val & 8:  errors.append("Output Over Voltage")
+            if hardware_val & 4:  errors.append("Output Over Current")
+            if hardware_val & 2:  errors.append("Low Line Voltage")
+            if hardware_val & 1:  errors.append("Temperature Fault")
+            
+            # PSH errors
+            psh_val = int(psh_errors.strip())
+            if psh_val & 2: errors.append("PSH Short")
+            if psh_val & 1: errors.append("PSH Open")
+            
+            return "; ".join(errors) if errors else "None"
+            
+        except (ValueError, IndexError):
+            return "Parse Error"
+    
     def _get_next_csv_filename(self):
         """Find the next available CSV filename with automatic numbering"""
         base_filename = f"ramps/{self.start_date}_ramp_log.csv"
@@ -125,6 +164,10 @@ class RampLogger:
                 field = float(field_str.replace('+', '').replace('E+00', '')) if field_str != "NO_RESPONSE" else None
             except:
                 field = None
+                
+            # Get error status
+            error_response = self.power_controller.send_command("ERSTR?")
+            error_status = self._parse_error_status(error_response)
             
             return {
                 "timestamp": timestamp,
@@ -134,7 +177,8 @@ class RampLogger:
                 "ramp_rate": ramp_rate,
                 "current": current,
                 "voltage": voltage,
-                "field": field
+                "field": field,
+                "error_status": error_status
             }
             
         except Exception as e:
@@ -152,7 +196,8 @@ class RampLogger:
                 data["ramp_rate"],
                 data["current"],
                 data["voltage"],
-                data["field"]
+                data["field"],
+                data["error_status"]
             ]
             return row
         except Exception as e:
@@ -198,6 +243,8 @@ class RampLogger:
                     elif i in [4, 5, 6, 7] and isinstance(value, float):
                         # Ramp rate, current, voltage, field (4 decimal places)
                         formatted_value = f"{value:.4f}"
+                    elif i == 8:  # Error status column
+                        formatted_value = str(value) if value is not None else "None"
                     elif isinstance(value, float):
                         # Other numbers (2 decimal places)
                         formatted_value = f"{value:.2f}"
