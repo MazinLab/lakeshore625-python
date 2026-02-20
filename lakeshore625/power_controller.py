@@ -85,6 +85,17 @@ class PowerController:
         command = f"QNCH 1,{step_limit}"
         return self.send_command(command)
 
+    def set_quench_detection(self, enable, step_limit):
+        """
+        Set quench detection enable and step limit using QNCH command
+        
+        Args:
+            enable (int): 0 to disable, 1 to enable
+            step_limit (float): Step limit in A/s
+        """
+        command = f"QNCH {enable} {step_limit}"
+        return self.send_command(command)
+
     def get_ramp_rate(self):
         """
         Get current ramp rate using RATE? command
@@ -233,6 +244,63 @@ class PowerController:
         if response is None or response == "":
             return "NO_RESPONSE"
         return response
+
+    def get_error_status(self):
+        """
+        Get error status using ERSTR? command and parse the results
+        
+        Returns:
+            str: Parsed error status
+        """
+        response = self.send_command("ERSTR?")
+        if response is None or response == "":
+            return "NO_RESPONSE"
+        
+        try:
+            hardware_errors, operational_errors, psh_errors = response.split(',')
+            hardware_val = int(hardware_errors.strip())
+            operational_val = int(operational_errors.strip())
+            psh_val = int(psh_errors.strip())
+            
+            result = ["Error Status Register:"]
+            
+            # Hardware errors (bit meanings)
+            if hardware_val == 0:
+                result.append("  Hardware Errors: None")
+            else:
+                result.append(f"  Hardware Errors: {hardware_val}")
+                if hardware_val & 32: result.append("    - DAC Processor Not Responding")
+                if hardware_val & 16: result.append("    - Output Control Failure")
+                if hardware_val & 8:  result.append("    - Output Over Voltage")
+                if hardware_val & 4:  result.append("    - Output Over Current")
+                if hardware_val & 2:  result.append("    - Low Line Voltage")
+                if hardware_val & 1:  result.append("    - Temperature Fault")
+            
+            # Operational errors (bit meanings)
+            if operational_val == 0:
+                result.append("  Operational Errors: None")
+            else:
+                result.append(f"  Operational Errors: {operational_val}")
+                if operational_val & 64: result.append("    - Magnet Discharging Through Crowbar")
+                if operational_val & 32: result.append("    - Magnet Quench Detected")
+                if operational_val & 16: result.append("    - Remote Inhibit Detected")
+                if operational_val & 8:  result.append("    - Temperature High")
+                if operational_val & 4:  result.append("    - High Line Voltage")
+                if operational_val & 2:  result.append("    - External Current Program Error")
+                if operational_val & 1:  result.append("    - Calibration Error")
+            
+            # PSH errors (bit meanings)
+            if psh_val == 0:
+                result.append("  PSH Errors: None")
+            else:
+                result.append(f"  PSH Errors: {psh_val}")
+                if psh_val & 2: result.append("    - PSH Short Circuit")
+                if psh_val & 1: result.append("    - PSH Open Circuit")
+                
+            return "\n".join(result)
+            
+        except (ValueError, IndexError):
+            return f"Raw error status: {response}"
 
     def get_baud_rate(self):
         """
